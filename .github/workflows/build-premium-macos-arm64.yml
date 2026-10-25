@@ -32,7 +32,7 @@ jobs:
       - name: Build Qt 5 SerialPort and macdeployqt tools
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/qt5-src" "$RUNNER_TEMP/qt5-install-root"
+          mkdir -p "$RUNNER_TEMP/qt5-src" "$RUNNER_TEMP/qt5-install-root" "$RUNNER_TEMP/macdeployqt-install/bin"
           cd "$RUNNER_TEMP/qt5-src"
           curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qtserialport-everywhere-opensource-src-5.15.19.tar.xz -o qtserialport.tar.xz
           tar -xf qtserialport.tar.xz
@@ -53,10 +53,11 @@ jobs:
           test -f "$TOOLS_PRO"
           mkdir -p "$RUNNER_TEMP/macdeployqt-build"
           cd "$RUNNER_TEMP/macdeployqt-build"
-          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64
+          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64 DESTDIR="$RUNNER_TEMP/macdeployqt-install/bin"
           make -j"$(sysctl -n hw.ncpu)"
-          install -m 755 macdeployqt "$QT_ROOT/bin/macdeployqt"
-          test -x "$QT_ROOT/bin/macdeployqt"
+          test -x "$RUNNER_TEMP/macdeployqt-install/bin/macdeployqt"
+          echo "MACDEPLOYQT_DIR=$RUNNER_TEMP/macdeployqt-install/bin" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/macdeployqt-install/bin" >> "$GITHUB_PATH"
 
       - name: Prepare Premium source for native macOS
         run: |
