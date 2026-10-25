@@ -33,15 +33,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
-      # macOS resolves VERSION and <version> as the same path on its default
-      # case-insensitive filesystem. Avoid shadowing libc++'s standard header.
       - name: Rename source version marker for macOS
         run: |
           for sku in budget premium; do
             mv "macos/source-${sku}/Software/VERSION" "macos/source-${sku}/Software/RCX_VERSION.txt"
           done
-      # Night Shift is an undocumented Apple API. Resolve its class dynamically
-      # so the native linker does not require a private-framework symbol.
       - name: Resolve Night Shift class at runtime
         run: |
           python3 - <<'PY'
@@ -68,8 +64,7 @@ jobs:
           from pathlib import Path
           path = Path('macos/build_macos.py')
           source = path.read_text()
-          source = source.replace("if not f.is_file() or f.is_symlink():continue", "if f == mac/'RCX_Launcher': continue
-        if not f.is_file() or f.is_symlink():continue")
+          source = source.replace("if not f.is_file() or f.is_symlink():continue", "if f == mac/'RCX_Launcher': continue" + chr(10) + "        if not f.is_file() or f.is_symlink():continue")
           path.write_text(source)
           PY
       - name: Build and test candidate
