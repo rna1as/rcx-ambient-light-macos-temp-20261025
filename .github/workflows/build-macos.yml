@@ -40,6 +40,19 @@ jobs:
           for sku in budget premium; do
             mv "macos/source-${sku}/Software/VERSION" "macos/source-${sku}/Software/RCX_VERSION.txt"
           done
+      # Night Shift is an undocumented Apple API. Resolve its class dynamically
+      # so the native linker does not require a private-framework symbol.
+      - name: Resolve Night Shift class at runtime
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for sku in ('budget', 'premium'):
+              path = Path('macos') / f'source-{sku}' / 'Software/grab/MacUtils.mm'
+              source = path.read_text()
+              source = source.replace('[[CBBlueLightClient alloc]', '[[NSClassFromString(@"CBBlueLightClient") alloc]')
+              source = source.replace('[CBBlueLightClient supportsBlueLightReduction]', '[NSClassFromString(@"CBBlueLightClient") supportsBlueLightReduction]')
+              path.write_text(source)
+          PY
       - name: Build and test candidate
         run: |
           python3 macos/build_macos.py \
