@@ -53,6 +53,16 @@ jobs:
               source = source.replace('[CBBlueLightClient supportsBlueLightReduction]', '[NSClassFromString(@"CBBlueLightClient") supportsBlueLightReduction]')
               path.write_text(source)
           PY
+      # lipo takes the input file before the -verify_arch operation.
+      - name: Fix lipo verification argument order
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('macos/build_macos.py')
+          source = path.read_text()
+          source = source.replace("run(['lipo','-verify_arch',args.arch,mac/name],work,env)", "run(['lipo',mac/name,'-verify_arch',args.arch],work,env)")
+          path.write_text(source)
+          PY
       - name: Build and test candidate
         run: |
           python3 macos/build_macos.py \
