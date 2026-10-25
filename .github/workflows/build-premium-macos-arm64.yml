@@ -36,7 +36,8 @@ jobs:
           cd "$RUNNER_TEMP/qt5-src"
           curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qtserialport-everywhere-opensource-src-5.15.19.tar.xz -o qtserialport.tar.xz
           tar -xf qtserialport.tar.xz
-          SERIAL_SRC="$RUNNER_TEMP/qt5-src/qtserialport-everywhere-opensource-src-5.15.19"
+          SERIAL_SRC="$(find "$RUNNER_TEMP/qt5-src" -maxdepth 1 -type d -name 'qtserialport-*5.15.19' -print -quit)"
+          test -n "$SERIAL_SRC"
           cd "$SERIAL_SRC"
           "$QT_ROOT/bin/qmake" qtserialport.pro
           make -j"$(sysctl -n hw.ncpu)"
@@ -47,7 +48,8 @@ jobs:
           cd "$RUNNER_TEMP/qt5-src"
           curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qttools-everywhere-opensource-src-5.15.19.tar.xz -o qttools.tar.xz
           tar -xf qttools.tar.xz
-          TOOLS_PRO="$RUNNER_TEMP/qt5-src/qttools-everywhere-opensource-src-5.15.19/src/macdeployqt/macdeployqt/macdeployqt.pro"
+          TOOLS_ROOT="$(find "$RUNNER_TEMP/qt5-src" -maxdepth 1 -type d -name 'qttools-*5.15.19' -print -quit)"
+          TOOLS_PRO="$TOOLS_ROOT/src/macdeployqt/macdeployqt/macdeployqt.pro"
           test -f "$TOOLS_PRO"
           mkdir -p "$RUNNER_TEMP/macdeployqt-build"
           cd "$RUNNER_TEMP/macdeployqt-build"
