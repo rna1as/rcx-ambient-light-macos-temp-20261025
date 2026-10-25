@@ -43,24 +43,15 @@ jobs:
           cd "$RUNNER_TEMP/qt-src"
           curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qttools-everywhere-opensource-src-5.15.19.tar.xz -o tools.tar.xz
           tar -xf tools.tar.xz
-          TOOLS_ROOT="$(find . -maxdepth 1 -type d -name 'qttools-*5.15.19' -print -quit)"
-          TOOLS_PRO="$TOOLS_ROOT/src/macdeployqt/macdeployqt/macdeployqt.pro"
+          TOOLS_PRO="$(find "$RUNNER_TEMP/qt-src" -path '*/src/macdeployqt/macdeployqt/macdeployqt.pro' -print -quit)"
           test -f "$TOOLS_PRO"
           mkdir -p "$RUNNER_TEMP/macdeployqt-build"
           cd "$RUNNER_TEMP/macdeployqt-build"
-          "$QT_ROOT/bin/qmake" "$GITHUB_WORKSPACE/$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('Makefile')
-          s=p.read_text()
-          s=s.replace('/bin/macdeployqt', str(Path.home().parent / 'unused'))
-          s=s.replace('/unused', '/macdeployqt')
-          s=s.replace(str(Path.home().parent / 'unused'), __import__('os').environ['RUNNER_TEMP'] + '/bin/macdeployqt')
-          p.write_text(s)
-          PY
+          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64
+          sed -i '' "s|/bin/macdeployqt|$RUNNER_TEMP/bin/macdeployqt|g" Makefile
           make -j"$(sysctl -n hw.ncpu)"
           test -x "$RUNNER_TEMP/bin/macdeployqt"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          cp "$RUNNER_TEMP/bin/macdeployqt" "$QT_ROOT/bin/macdeployqt"
       - name: Prepare Premium source for macOS
         run: |
           mv macos/source-premium/Software/VERSION macos/source-premium/Software/RCX_VERSION.txt
@@ -72,6 +63,7 @@ jobs:
           p=Path('macos/build_macos.py')
           s=p.read_text().replace("run(['lipo','-verify_arch',args.arch,mac/name],work,env)", "run(['lipo',mac/name,'-verify_arch',args.arch],work,env)")
           s=s.replace("if not f.is_file() or f.is_symlink():continue", "if f == mac/'RCX_Launcher': continue" + chr(10) + "        if not f.is_file() or f.is_symlink():continue")
+          s=s.replace("run([qmake, ROOT/'native'/pro, *qargs], cwd, env)", "run([qmake, ROOT/'native'/pro, *qargs, 'DESTDIR='+str(cwd)], cwd, env)")
           p.write_text(s)
           PY
       - name: Build Premium ARM64 DMG
