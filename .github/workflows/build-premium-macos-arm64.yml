@@ -52,8 +52,10 @@ jobs:
           test -f "$TOOLS_PRO"
           mkdir -p "$RUNNER_TEMP/macdeployqt-build"
           cd "$RUNNER_TEMP/macdeployqt-build"
-          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64 QMAKE_EXTRA_TARGETS=install
-          sed -i '' "s|-o /bin/macdeployqt |-o $RUNNER_TEMP/macdeployqt-install/bin/macdeployqt |" Makefile
+          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64
+          grep -n '/bin/macdeployqt' Makefile
+          sed -i '' "s|-o /bin/macdeployqt |-o $RUNNER_TEMP/macdeployqt-install/bin/macdeployqt |g" Makefile
+          grep -n macdeployqt Makefile | tail -5
           make -j"$(sysctl -n hw.ncpu)"
           test -x "$RUNNER_TEMP/macdeployqt-install/bin/macdeployqt"
           echo "$RUNNER_TEMP/macdeployqt-install/bin" >> "$GITHUB_PATH"
@@ -73,13 +75,6 @@ jobs:
           source = source.replace("run(['lipo','-verify_arch',args.arch,mac/name],work,env)", "run(['lipo',mac/name,'-verify_arch',args.arch],work,env)")
           source = source.replace("if not f.is_file() or f.is_symlink():continue", "if f == mac/'RCX_Launcher': continue" + chr(10) + "        if not f.is_file() or f.is_symlink():continue")
           path.write_text(source)
-          for name in ['RCXPlatform.pro', 'RCXLauncher.pro']:
-              project = Path('macos/native') / name
-              text = project.read_text()
-              target = 'rcx-platform' if name == 'RCXPlatform.pro' else 'RCX_Launcher'
-              text += '
-DESTDIR = ' + str(Path(os.environ['RUNNER_TEMP']) / 'native-bin') + '
-'
           PY
 
       - name: Build, test, sign candidate and create DMG
