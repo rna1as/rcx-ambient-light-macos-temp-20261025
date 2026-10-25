@@ -28,7 +28,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/qt-tools"
           "$RUNNER_TEMP/qt-tools/bin/python" -m pip install --disable-pip-version-check aqtinstall==3.3.0
           "$RUNNER_TEMP/qt-tools/bin/python" -m aqt install-qt mac desktop 5.15.2 clang_64 \
-            -m qttools qtserialport \
+            --archives qtbase qttools qtserialport \
             -O "$RUNNER_TEMP/Qt"
       - uses: actions/setup-go@v5
         with:
