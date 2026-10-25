@@ -1,0 +1,90 @@
+name: Premium Apple Silicon candidate DMG
+
+on:
+  push:
+    branches: [premium-apple-silicon]
+    paths:
+      - ".github/workflows/build-premium-macos-arm64.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Premium arm64 candidate
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Unpack isolated macOS source
+        run: unzip -q RCX_macOS_Preparation_Public.zip -d .
+
+      - name: Install Apple Silicon Qt 5 SDK
+        run: |
+          brew install qt@5
+          QT_ROOT="$(brew --prefix qt@5)"
+          echo "QT_ROOT=$QT_ROOT" >> "$GITHUB_ENV"
+          "$QT_ROOT/bin/qmake" -query QT_VERSION
+          lipo -archs "$QT_ROOT/lib/QtCore.framework/QtCore" | grep -qw arm64
+
+      - name: Build Qt 5 SerialPort and macdeployqt tools
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qt5-src" "$RUNNER_TEMP/qt5-install-root"
+          cd "$RUNNER_TEMP/qt5-src"
+          curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qtserialport-everywhere-opensource-src-5.15.19.tar.xz -o qtserialport.tar.xz
+          tar -xf qtserialport.tar.xz
+          SERIAL_SRC="$RUNNER_TEMP/qt5-src/qtserialport-everywhere-opensource-src-5.15.19"
+          cd "$SERIAL_SRC"
+          "$QT_ROOT/bin/qmake" qtserialport.pro
+          make -j"$(sysctl -n hw.ncpu)"
+          QT_PREFIX="$("$QT_ROOT/bin/qmake" -query QT_INSTALL_PREFIX)"
+          make install INSTALL_ROOT="$RUNNER_TEMP/qt5-install-root"
+          rsync -a "$RUNNER_TEMP/qt5-install-root$QT_PREFIX/" "$QT_PREFIX/"
+
+          cd "$RUNNER_TEMP/qt5-src"
+          curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qttools-everywhere-opensource-src-5.15.19.tar.xz -o qttools.tar.xz
+          tar -xf qttools.tar.xz
+          TOOLS_PRO="$RUNNER_TEMP/qt5-src/qttools-everywhere-opensource-src-5.15.19/src/macdeployqt/macdeployqt/macdeployqt.pro"
+          test -f "$TOOLS_PRO"
+          mkdir -p "$RUNNER_TEMP/macdeployqt-build"
+          cd "$RUNNER_TEMP/macdeployqt-build"
+          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64
+          make -j"$(sysctl -n hw.ncpu)"
+          install -m 755 macdeployqt "$QT_ROOT/bin/macdeployqt"
+          test -x "$QT_ROOT/bin/macdeployqt"
+
+      - name: Prepare Premium source for native macOS
+        run: |
+          mv macos/source-premium/Software/VERSION macos/source-premium/Software/RCX_VERSION.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('macos/source-premium/Software/grab/MacUtils.mm')
+          source = path.read_text()
+          source = source.replace('[[CBBlueLightClient alloc]', '[[NSClassFromString(@"CBBlueLightClient") alloc]')
+          source = source.replace('[CBBlueLightClient supportsBlueLightReduction]', '[NSClassFromString(@"CBBlueLightClient") supportsBlueLightReduction]')
+          path.write_text(source)
+          path = Path('macos/build_macos.py')
+          source = path.read_text()
+          source = source.replace("run(['lipo','-verify_arch',args.arch,mac/name],work,env)", "run(['lipo',mac/name,'-verify_arch',args.arch],work,env)")
+          source = source.replace("if not f.is_file() or f.is_symlink():continue", "if f == mac/'RCX_Launcher': continue" + chr(10) + "        if not f.is_file() or f.is_symlink():continue")
+          path.write_text(source)
+          PY
+
+      - name: Build, test, sign candidate and create DMG
+        working-directory: macos
+        run: python3 build_macos.py --sku premium --arch arm64 --qt "$QT_ROOT" --minimum 12.0
+
+      - name: Preserve Premium ARM64 candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: RCX-premium-macOS-arm64-candidate
+          path: |
+            macos/artifacts/premium/arm64/**/RCX-*.dmg
+            macos/artifacts/premium/arm64/**/SHA256SUMS.txt
+            macos/artifacts/premium/arm64/**/BUILD_STATUS.json
+            macos/artifacts/premium/arm64/**/native-smoke-tests.txt
+          if-no-files-found: error
+          retention-days: 14
