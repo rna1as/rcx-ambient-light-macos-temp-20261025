@@ -51,7 +51,7 @@ jobs:
           sed -i '' "s|/bin/macdeployqt|$RUNNER_TEMP/bin/macdeployqt|g" Makefile
           make -j"$(sysctl -n hw.ncpu)"
           test -x "$RUNNER_TEMP/bin/macdeployqt"
-          cp "$RUNNER_TEMP/bin/macdeployqt" "$QT_ROOT/bin/macdeployqt"
+          echo "MACDEPLOYQT=$RUNNER_TEMP/bin/macdeployqt" >> "$GITHUB_ENV"
       - name: Prepare Premium source for macOS
         run: |
           mv macos/source-premium/Software/VERSION macos/source-premium/Software/RCX_VERSION.txt
@@ -64,6 +64,7 @@ jobs:
           s=p.read_text().replace("run(['lipo','-verify_arch',args.arch,mac/name],work,env)", "run(['lipo',mac/name,'-verify_arch',args.arch],work,env)")
           s=s.replace("if not f.is_file() or f.is_symlink():continue", "if f == mac/'RCX_Launcher': continue" + chr(10) + "        if not f.is_file() or f.is_symlink():continue")
           s=s.replace("run([qmake, ROOT/'native'/pro, *qargs], cwd, env)", "run([qmake, ROOT/'native'/pro, *qargs, 'DESTDIR='+str(cwd)], cwd, env)")
+          s=s.replace("qmake, deploy = qt/'bin/qmake', qt/'bin/macdeployqt'", "qmake, deploy = qt/'bin/qmake', Path(os.environ['MACDEPLOYQT'])")
           p.write_text(s)
           PY
       - name: Build Premium ARM64 DMG
