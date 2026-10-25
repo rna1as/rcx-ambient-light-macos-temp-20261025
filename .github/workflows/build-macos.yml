@@ -33,6 +33,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
+      # macOS resolves VERSION and <version> as the same path on its default
+      # case-insensitive filesystem. Avoid shadowing libc++'s standard header.
+      - name: Rename source version marker for macOS
+        run: |
+          for sku in budget premium; do
+            mv "macos/source-${sku}/Software/VERSION" "macos/source-${sku}/Software/RCX_VERSION.txt"
+          done
       - name: Build and test candidate
         run: |
           python3 macos/build_macos.py \
