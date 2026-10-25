@@ -44,7 +44,6 @@ jobs:
           QT_PREFIX="$("$QT_ROOT/bin/qmake" -query QT_INSTALL_PREFIX)"
           make install INSTALL_ROOT="$RUNNER_TEMP/qt5-install-root"
           rsync -a "$RUNNER_TEMP/qt5-install-root$QT_PREFIX/" "$QT_PREFIX/"
-
           cd "$RUNNER_TEMP/qt5-src"
           curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qttools-everywhere-opensource-src-5.15.19.tar.xz -o qttools.tar.xz
           tar -xf qttools.tar.xz
