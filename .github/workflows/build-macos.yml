@@ -1,0 +1,57 @@
+name: macOS candidate DMG
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "RCX_macOS_Preparation_Public.zip"
+      - ".github/workflows/build-macos.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.sku }} Intel candidate
+    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        sku: [budget, premium]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Unpack macOS source snapshot
+        run: unzip -q RCX_macOS_Preparation_Public.zip -d "$GITHUB_WORKSPACE"
+
+      - name: Install Qt 5.15 toolchain
+        run: |
+          python3 -m venv "$RUNNER_TEMP/qt-tools"
+          "$RUNNER_TEMP/qt-tools/bin/python" -m pip install --disable-pip-version-check aqtinstall==3.3.0
+          "$RUNNER_TEMP/qt-tools/bin/python" -m aqt install-qt mac desktop 5.15.2 clang_64 \
+            -m qtbase qttools qtserialport \
+            -O "$RUNNER_TEMP/Qt"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Build and test candidate
+        run: |
+          python3 macos/build_macos.py \
+            --sku "${{ matrix.sku }}" \
+            --arch x86_64 \
+            --qt "$RUNNER_TEMP/Qt/5.15.2/clang_64"
+
+      - name: Preserve candidate DMG and reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: RCX-${{ matrix.sku }}-macOS-x86_64-candidate
+          path: |
+            macos/artifacts/${{ matrix.sku }}/x86_64/**/RCX-*.dmg
+            macos/artifacts/${{ matrix.sku }}/x86_64/**/SHA256SUMS.txt
+            macos/artifacts/${{ matrix.sku }}/x86_64/**/BUILD_STATUS.json
+            macos/artifacts/${{ matrix.sku }}/x86_64/**/native-smoke-tests.txt
+          if-no-files-found: error
+          retention-days: 14
