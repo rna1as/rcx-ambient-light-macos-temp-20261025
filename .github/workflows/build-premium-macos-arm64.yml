@@ -52,11 +52,17 @@ jobs:
           test -f "$TOOLS_PRO"
           mkdir -p "$RUNNER_TEMP/macdeployqt-build"
           cd "$RUNNER_TEMP/macdeployqt-build"
-          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64 target.path="$RUNNER_TEMP/macdeployqt-install/bin"
+          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64 QMAKE_EXTRA_TARGETS=install MACDEPLOYQT_PATH="$RUNNER_TEMP/macdeployqt-install/bin/macdeployqt"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          makefile=Path('Makefile')
+          text=makefile.read_text()
+          text=text.replace(' -o /bin/macdeployqt ', ' -o '+os.environ['RUNNER_TEMP']+'/macdeployqt-install/bin/macdeployqt ')
+          makefile.write_text(text)
+          PY
           make -j"$(sysctl -n hw.ncpu)"
-          make install
           test -x "$RUNNER_TEMP/macdeployqt-install/bin/macdeployqt"
-          echo "MACDEPLOYQT_DIR=$RUNNER_TEMP/macdeployqt-install/bin" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/macdeployqt-install/bin" >> "$GITHUB_PATH"
 
       - name: Prepare Premium source for native macOS
