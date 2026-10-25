@@ -1,0 +1,133 @@
+name: Premium macOS ARM64 signed and notarized package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Premium Apple Silicon distribution
+    runs-on: macos-15
+    steps:
+      - name: Check out isolated macOS source
+        uses: actions/checkout@v4
+
+      - name: Unpack source snapshot and use the signed-build fixes
+        run: |
+          unzip -q RCX_macOS_Preparation_Public.zip -d .
+          cp build_macos_signed.py macos/build_macos.py
+
+      - name: Require Apple signing credentials
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in CERTIFICATE_P12_BASE64 CERTIFICATE_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required repository secret: $name" >&2
+              exit 1
+            fi
+          done
+          keychain="$RUNNER_TEMP/rcx-build.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$keychain_password"
+          echo "RCX_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "RCX_KEYCHAIN_PASSWORD=$keychain_password" >> "$GITHUB_ENV"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security default-keychain -s "$keychain"
+          certificate="$RUNNER_TEMP/rcx-developer-id.p12"
+          printf '%s' "$CERTIFICATE_P12_BASE64" | base64 -D > "$certificate"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -nE 's/^[[:space:]]*[0-9]+\) ([A-F0-9]+) "Developer ID Application:.*$/\1/p' | head -n1)"
+          if [ -z "$identity" ]; then
+            echo "Imported certificate is not a valid Developer ID Application identity." >&2
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          xcrun notarytool store-credentials RCX-NOTARY \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --keychain "$keychain"
+          rm -f "$certificate"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Install Apple Silicon Qt 5 SDK
+        run: |
+          brew install qt@5
+          QT_ROOT="$(brew --prefix qt@5)"
+          echo "QT_ROOT=$QT_ROOT" >> "$GITHUB_ENV"
+          lipo -archs "$QT_ROOT/lib/QtCore.framework/QtCore" | grep -qw arm64
+
+      - name: Build QtSerialPort and macdeployqt for the runner
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qt-src" "$RUNNER_TEMP/qt-install" "$RUNNER_TEMP/bin"
+          cd "$RUNNER_TEMP/qt-src"
+          curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qtserialport-everywhere-opensource-src-5.15.19.tar.xz -o serial.tar.xz
+          tar -xf serial.tar.xz
+          SERIAL_SRC="$(find . -maxdepth 1 -type d -name 'qtserialport-*5.15.19' -print -quit)"
+          test -n "$SERIAL_SRC"
+          cd "$SERIAL_SRC"
+          "$QT_ROOT/bin/qmake" qtserialport.pro
+          make -j"$(sysctl -n hw.ncpu)"
+          QT_PREFIX="$("$QT_ROOT/bin/qmake" -query QT_INSTALL_PREFIX)"
+          make install INSTALL_ROOT="$RUNNER_TEMP/qt-install"
+          rsync -a "$RUNNER_TEMP/qt-install$QT_PREFIX/" "$QT_PREFIX/"
+          cd "$RUNNER_TEMP/qt-src"
+          curl -fL --retry 3 https://download.qt.io/archive/qt/5.15/5.15.19/submodules/qttools-everywhere-opensource-src-5.15.19.tar.xz -o tools.tar.xz
+          tar -xf tools.tar.xz
+          TOOLS_PRO="$(find "$RUNNER_TEMP/qt-src" -path '*/src/macdeployqt/macdeployqt/macdeployqt.pro' -print -quit)"
+          test -f "$TOOLS_PRO"
+          mkdir -p "$RUNNER_TEMP/macdeployqt-build"
+          cd "$RUNNER_TEMP/macdeployqt-build"
+          "$QT_ROOT/bin/qmake" "$TOOLS_PRO" QMAKE_APPLE_DEVICE_ARCHS=arm64
+          sed -i '' "s|/bin/macdeployqt|$RUNNER_TEMP/bin/macdeployqt|g" Makefile
+          make -j"$(sysctl -n hw.ncpu)"
+          test -x "$RUNNER_TEMP/bin/macdeployqt"
+          echo "MACDEPLOYQT=$RUNNER_TEMP/bin/macdeployqt" >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize, and validate Premium DMG
+        working-directory: macos
+        run: |
+          set -euo pipefail
+          python3 build_macos.py \
+            --sku premium \
+            --arch arm64 \
+            --qt "$QT_ROOT" \
+            --minimum 12.0 \
+            --sign-identity "$SIGN_IDENTITY" \
+            --notary-profile RCX-NOTARY \
+            --distribution
+
+      - name: Upload only after Apple notarization and validation pass
+        uses: actions/upload-artifact@v4
+        with:
+          name: RCX-premium-macOS-arm64-notarized
+          path: |
+            macos/artifacts/premium/arm64/**/RCX-*.dmg
+            macos/artifacts/premium/arm64/**/SHA256SUMS.txt
+            macos/artifacts/premium/arm64/**/BUILD_STATUS.json
+            macos/artifacts/premium/arm64/**/native-smoke-tests.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing identity
+        if: always()
+        run: |
+          if [ -n "${RCX_KEYCHAIN:-}" ] && [ -f "$RCX_KEYCHAIN" ]; then
+            security delete-keychain "$RCX_KEYCHAIN" || true
+          fi
