@@ -17,6 +17,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
       - name: Unpack isolated macOS source
         run: unzip -q RCX_macOS_Preparation_Public.zip -d .
       - name: Install Apple Silicon Qt 5 SDK
